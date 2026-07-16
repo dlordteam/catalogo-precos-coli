@@ -1,3 +1,3 @@
-import type {Metadata} from "next";import "./globals.css";
+import type {Metadata} from "next";import "./globals.css";import "./tabs.css";
 export const metadata:Metadata={title:"Catálogo Profissional | COLI Distribuidora",description:"Produtos, imagens, especificações e preços para licitações em um só lugar.",openGraph:{title:"Catálogo Profissional | COLI Distribuidora",description:"Consulte produtos, custos e preços sugeridos com a margem da sua empresa.",images:[{url:"/og.png",width:1536,height:1024,alt:"Catálogo COLI Distribuidora"}]},twitter:{card:"summary_large_image",title:"Catálogo Profissional | COLI Distribuidora",description:"Produtos e preços para licitações.",images:["/og.png"]}};
 export default function RootLayout({children}:{children:React.ReactNode}){return <html lang="pt-BR"><body>{children}</body></html>}
