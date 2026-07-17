@@ -23,6 +23,7 @@ interface ExecutionContext {
 }
 
 type ProductRow = {
+  id: number;
   fornecedor: string;
   codigo: string;
   descricao: string;
@@ -92,6 +93,13 @@ async function licitacoesApi(request: Request, env: Env, url: URL) {
 
 async function productsApi(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
+  if (request.method === "POST") {
+    const body = await request.json<Record<string, any>>();
+    const characteristics = Array.isArray(body.caracteristicas) ? body.caracteristicas : String(body.caracteristicas || "").split("\n").map((item) => item.trim()).filter(Boolean);
+    const row = await env.DB.prepare("INSERT INTO products (fornecedor,codigo,descricao,categoria,unidade,pcs_caixa,preco_unitario,pagina,status_revisao,imagem,descricao_detalhada,caracteristicas,fonte,fonte_nome) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id,fornecedor,codigo,descricao,categoria,unidade,pcs_caixa,preco_unitario,pagina,status_revisao,imagem,descricao_detalhada,caracteristicas,fonte,fonte_nome")
+      .bind(body.fornecedor, body.codigo, body.descricao, body.categoria, body.unidade || "UN", body.pcs_caixa ? Number(body.pcs_caixa) : null, body.preco_unitario === "" || body.preco_unitario == null ? null : Number(body.preco_unitario), 0, body.status_revisao || "Revisar", body.imagem || "", body.descricao_detalhada || "", JSON.stringify(characteristics), body.fonte || "", body.fonte_nome || body.fornecedor).first<ProductRow>();
+    return Response.json({ product: { ...row, caracteristicas: characteristics } }, { status: 201 });
+  }
   const query = (url.searchParams.get("q") || "").trim();
   const category = (url.searchParams.get("categoria") || "").trim();
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 5000, 1), 5000);
@@ -109,7 +117,7 @@ async function productsApi(request: Request, env: Env): Promise<Response> {
   }
 
   const where = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
-  const statement = env.DB.prepare(`SELECT fornecedor, codigo, descricao, categoria, unidade, pcs_caixa, preco_unitario, pagina, status_revisao, imagem, descricao_detalhada, caracteristicas, fonte, fonte_nome FROM products${where} ORDER BY id LIMIT ?`).bind(...values, limit);
+  const statement = env.DB.prepare(`SELECT id, fornecedor, codigo, descricao, categoria, unidade, pcs_caixa, preco_unitario, pagina, status_revisao, imagem, descricao_detalhada, caracteristicas, fonte, fonte_nome FROM products${where} ORDER BY id LIMIT ?`).bind(...values, limit);
   const result = await statement.all<ProductRow>();
   const products = (result.results || []).map((row) => ({
     ...row,
@@ -142,8 +150,13 @@ const worker = {
       return licitacoesApi(request, env, url);
     }
 
-    if (url.pathname === "/api/products" && request.method === "GET") {
+    if (url.pathname === "/api/products" && (request.method === "GET" || request.method === "POST")) {
       return productsApi(request, env);
+    }
+    const deleteProduct = url.pathname.match(/^\/api\/products\/(\d+)$/);
+    if (deleteProduct && request.method === "DELETE") {
+      await env.DB.prepare("DELETE FROM products WHERE id = ?").bind(Number(deleteProduct[1])).run();
+      return Response.json({ ok: true });
     }
 
     if (url.pathname === "/_vinext/image") {
