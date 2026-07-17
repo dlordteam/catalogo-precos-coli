@@ -99,14 +99,14 @@ async function licitacoesApi(request: Request, env: Env, url: URL) {
   if (request.method === "POST" && itemMatch) {
     const custo = Number(body.custo_unitario) || 0;
     const minimo = Number(body.valor_minimo) || custo * 1.6;
-    const result = await env.DB.prepare("INSERT INTO licitacao_items (licitacao_id,item_numero,descricao_edital,quantidade,unidade,produto_id,produto_codigo,produto_nome,marca,modelo,fornecedor,link_compra,custo_unitario,valor_inicial,valor_minimo,justificativa,status_compra) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id")
-      .bind(Number(itemMatch[1]), body.item_numero, body.descricao_edital, Number(body.quantidade) || 1, body.unidade || "UN", Number(body.produto_id) || null, body.produto_codigo || "", body.produto_nome, body.marca || "", body.modelo || "", body.fornecedor || "", body.link_compra || "", custo, Number(body.valor_inicial) || 0, minimo, body.justificativa || "", body.status_compra || "Planejado").first();
+    const result = await env.DB.prepare("INSERT INTO licitacao_items (licitacao_id,item_numero,descricao_edital,quantidade,unidade,produto_id,produto_codigo,produto_nome,marca,modelo,fornecedor,link_compra,custo_unitario,valor_inicial,valor_minimo,valor_vendido,justificativa,status_compra) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id")
+      .bind(Number(itemMatch[1]), body.item_numero, body.descricao_edital, Number(body.quantidade) || 1, body.unidade || "UN", Number(body.produto_id) || null, body.produto_codigo || "", body.produto_nome, body.marca || "", body.modelo || "", body.fornecedor || "", body.link_compra || "", custo, Number(body.valor_inicial) || 0, minimo, Number(body.valor_vendido) || 0, body.justificativa || "", body.status_compra || "Planejado").first();
     return Response.json(result, { status: 201 });
   }
   const updateItemMatch = url.pathname.match(/^\/api\/licitacoes\/(\d+)\/items\/(\d+)$/);
   if (request.method === "PATCH" && updateItemMatch) {
-    await env.DB.prepare("UPDATE licitacao_items SET status_compra=? WHERE id=? AND licitacao_id=?")
-      .bind(body.status_compra || "Planejado", Number(updateItemMatch[2]), Number(updateItemMatch[1])).run();
+    await env.DB.prepare("UPDATE licitacao_items SET status_compra=COALESCE(?,status_compra), valor_vendido=COALESCE(?,valor_vendido) WHERE id=? AND licitacao_id=?")
+      .bind(body.status_compra ?? null, body.valor_vendido == null ? null : Number(body.valor_vendido), Number(updateItemMatch[2]), Number(updateItemMatch[1])).run();
     return Response.json({ ok: true });
   }
   return Response.json({ error: "Operação não encontrada" }, { status: 404 });
