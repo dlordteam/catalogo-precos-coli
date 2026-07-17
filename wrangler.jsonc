@@ -1,0 +1,25 @@
+﻿{
+    "$schema":  "node_modules/wrangler/config-schema.json",
+    "name":  "catalogo-precos-coli",
+    "main":  "./worker/index.ts",
+    "compatibility_date":  "2026-07-17",
+    "compatibility_flags":  [
+                                "nodejs_compat"
+                            ],
+    "assets":  {
+                   "directory":  "./dist/client",
+                   "binding":  "ASSETS",
+                   "not_found_handling":  "none"
+               },
+    "images":  {
+                   "binding":  "IMAGES"
+               },
+    "d1_databases":  [
+                         {
+                             "database_name":  "catalogo-precos-coli-db",
+                             "migrations_dir":  "drizzle",
+                             "database_id":  "97683c51-a220-43fb-9b02-ccdac3bff094",
+                             "binding":  "DB"
+                         }
+                     ]
+}

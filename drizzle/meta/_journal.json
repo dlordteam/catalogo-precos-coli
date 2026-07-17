@@ -1,5 +1,13 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1784298358519,
+      "tag": "0000_faulty_zodiak",
+      "breakpoints": true
+    }
+  ]
 }
