@@ -75,9 +75,15 @@ async function licitacoesApi(request: Request, env: Env, url: URL) {
     return Response.json({ licitacoes: licitacoes.map((lic: any) => ({ ...lic, items: items.filter((item: any) => item.licitacao_id === lic.id) })) }, { headers: { "Cache-Control": "no-store" } });
   }
   const body = await request.json<Record<string, any>>();
+  const licitacaoMatch = url.pathname.match(/^\/api\/licitacoes\/(\d+)$/);
+  if (request.method === "PATCH" && licitacaoMatch) {
+    await env.DB.prepare("UPDATE licitacoes SET numero=?,orgao=?,portal=?,objeto=?,cidade=?,uf=?,data_disputa=?,status=?,link_licitei=?,observacoes=?,processo=?,modalidade=?,uasg=?,edital_url=?,empenho_numero=?,empenho_data=?,empenho_valor=?,valor_recebido=?,data_recebimento=?,data_compra=?,data_envio=?,codigo_rastreio=? WHERE id=?")
+      .bind(body.numero, body.orgao, body.portal || "Licitei", body.objeto, body.cidade || "", body.uf || "", body.data_disputa || "", body.status || "Em análise", body.link_licitei || "", body.observacoes || "", body.processo || "", body.modalidade || "Pregão eletrônico", body.uasg || "", body.edital_url || "", body.empenho_numero || "", body.empenho_data || "", Number(body.empenho_valor) || 0, Number(body.valor_recebido) || 0, body.data_recebimento || "", body.data_compra || "", body.data_envio || "", body.codigo_rastreio || "", Number(licitacaoMatch[1])).run();
+    return Response.json({ ok: true });
+  }
   if (request.method === "POST" && url.pathname === "/api/licitacoes") {
-    const result = await env.DB.prepare("INSERT INTO licitacoes (numero,orgao,portal,objeto,cidade,uf,data_disputa,status,link_licitei,observacoes) VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id")
-      .bind(body.numero, body.orgao, body.portal || "Licitei", body.objeto, body.cidade || "", body.uf || "", body.data_disputa || "", body.status || "Em análise", body.link_licitei || "", body.observacoes || "").first();
+    const result = await env.DB.prepare("INSERT INTO licitacoes (numero,orgao,portal,objeto,cidade,uf,data_disputa,status,link_licitei,observacoes,processo,modalidade,uasg,edital_url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id")
+      .bind(body.numero, body.orgao, body.portal || "Licitei", body.objeto, body.cidade || "", body.uf || "", body.data_disputa || "", body.status || "Em análise", body.link_licitei || "", body.observacoes || "", body.processo || "", body.modalidade || "Pregão eletrônico", body.uasg || "", body.edital_url || "").first();
     return Response.json(result, { status: 201 });
   }
   const itemMatch = url.pathname.match(/^\/api\/licitacoes\/(\d+)\/items$/);
@@ -87,6 +93,12 @@ async function licitacoesApi(request: Request, env: Env, url: URL) {
     const result = await env.DB.prepare("INSERT INTO licitacao_items (licitacao_id,item_numero,descricao_edital,quantidade,unidade,produto_codigo,produto_nome,marca,modelo,fornecedor,link_compra,custo_unitario,valor_inicial,valor_minimo,justificativa,status_compra) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id")
       .bind(Number(itemMatch[1]), body.item_numero, body.descricao_edital, Number(body.quantidade) || 1, body.unidade || "UN", body.produto_codigo || "", body.produto_nome, body.marca || "", body.modelo || "", body.fornecedor || "", body.link_compra || "", custo, Number(body.valor_inicial) || 0, minimo, body.justificativa || "", body.status_compra || "Planejado").first();
     return Response.json(result, { status: 201 });
+  }
+  const updateItemMatch = url.pathname.match(/^\/api\/licitacoes\/(\d+)\/items\/(\d+)$/);
+  if (request.method === "PATCH" && updateItemMatch) {
+    await env.DB.prepare("UPDATE licitacao_items SET status_compra=? WHERE id=? AND licitacao_id=?")
+      .bind(body.status_compra || "Planejado", Number(updateItemMatch[2]), Number(updateItemMatch[1])).run();
+    return Response.json({ ok: true });
   }
   return Response.json({ error: "Operação não encontrada" }, { status: 404 });
 }
@@ -146,7 +158,7 @@ const worker = {
       return new Response(null, { status: 302, headers: { Location: "/login" } });
     }
 
-    if (url.pathname === "/api/licitacoes" || url.pathname.match(/^\/api\/licitacoes\/\d+\/items$/)) {
+    if (url.pathname === "/api/licitacoes" || url.pathname.match(/^\/api\/licitacoes\/\d+(?:\/items(?:\/\d+)?)?$/)) {
       return licitacoesApi(request, env, url);
     }
 
