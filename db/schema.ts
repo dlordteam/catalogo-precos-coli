@@ -22,3 +22,39 @@ export const products = sqliteTable("products", {
   index("products_categoria_idx").on(table.categoria),
   index("products_preco_idx").on(table.precoUnitario),
 ]);
+
+export const licitacoes = sqliteTable("licitacoes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  numero: text("numero").notNull(),
+  orgao: text("orgao").notNull(),
+  portal: text("portal").notNull().default("Licitei"),
+  objeto: text("objeto").notNull(),
+  cidade: text("cidade").notNull().default(""),
+  uf: text("uf").notNull().default(""),
+  dataDisputa: text("data_disputa").notNull().default(""),
+  status: text("status").notNull().default("Em análise"),
+  linkLicitei: text("link_licitei").notNull().default(""),
+  observacoes: text("observacoes").notNull().default(""),
+  criadoEm: text("criado_em").notNull().default("CURRENT_TIMESTAMP"),
+});
+
+export const licitacaoItems = sqliteTable("licitacao_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  licitacaoId: integer("licitacao_id").notNull().references(() => licitacoes.id, { onDelete: "cascade" }),
+  itemNumero: text("item_numero").notNull(),
+  descricaoEdital: text("descricao_edital").notNull(),
+  quantidade: real("quantidade").notNull().default(1),
+  unidade: text("unidade").notNull().default("UN"),
+  produtoCodigo: text("produto_codigo").notNull().default(""),
+  produtoNome: text("produto_nome").notNull(),
+  marca: text("marca").notNull().default(""),
+  modelo: text("modelo").notNull().default(""),
+  fornecedor: text("fornecedor").notNull().default(""),
+  linkCompra: text("link_compra").notNull().default(""),
+  custoUnitario: real("custo_unitario").notNull().default(0),
+  valorInicial: real("valor_inicial").notNull().default(0),
+  valorMinimo: real("valor_minimo").notNull().default(0),
+  justificativa: text("justificativa").notNull().default(""),
+  statusCompra: text("status_compra").notNull().default("Planejado"),
+  criadoEm: text("criado_em").notNull().default("CURRENT_TIMESTAMP"),
+}, (table) => [index("licitacao_items_licitacao_idx").on(table.licitacaoId)]);
