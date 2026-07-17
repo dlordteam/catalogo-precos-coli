@@ -5,6 +5,7 @@ import handler from "vinext/server/app-router-entry";
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
+  DOCS: R2Bucket;
   AUTH_USERNAME?: string;
   AUTH_PASSWORD?: string;
   AUTH_SECRET?: string;
@@ -72,7 +73,21 @@ async function licitacoesApi(request: Request, env: Env, url: URL) {
   if (request.method === "GET") {
     const licitacoes = (await env.DB.prepare("SELECT * FROM licitacoes ORDER BY id DESC").all()).results || [];
     const items = (await env.DB.prepare("SELECT i.*, p.descricao AS catalogo_nome, p.descricao_detalhada AS catalogo_descricao, p.imagem AS catalogo_imagem, p.categoria AS catalogo_categoria, p.status_revisao AS catalogo_status, p.fonte AS catalogo_fonte FROM licitacao_items i LEFT JOIN products p ON p.id = i.produto_id ORDER BY i.id").all()).results || [];
-    return Response.json({ licitacoes: licitacoes.map((lic: any) => ({ ...lic, items: items.filter((item: any) => item.licitacao_id === lic.id) })) }, { headers: { "Cache-Control": "no-store" } });
+    const documentos = (await env.DB.prepare("SELECT id,licitacao_id,tipo,nome,content_type,tamanho,criado_em FROM licitacao_documentos ORDER BY id DESC").all()).results || [];
+    return Response.json({ licitacoes: licitacoes.map((lic: any) => ({ ...lic, items: items.filter((item: any) => item.licitacao_id === lic.id), documents: documentos.filter((doc: any) => doc.licitacao_id === lic.id) })) }, { headers: { "Cache-Control": "no-store" } });
+  }
+  const documentMatch = url.pathname.match(/^\/api\/licitacoes\/(\d+)\/documentos$/);
+  if (request.method === "POST" && documentMatch) {
+    const form = await request.formData();
+    const file = form.get("arquivo");
+    if (!(file instanceof File) || file.size === 0) return Response.json({ error: "Arquivo obrigatório" }, { status: 400 });
+    const licitacaoId = Number(documentMatch[1]);
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
+    const key = `${licitacaoId}/${crypto.randomUUID()}-${safeName}`;
+    await env.DOCS.put(key, file.stream(), { httpMetadata: { contentType: file.type || "application/octet-stream" } });
+    const row = await env.DB.prepare("INSERT INTO licitacao_documentos (licitacao_id,tipo,nome,arquivo_key,content_type,tamanho) VALUES (?,?,?,?,?,?) RETURNING id,licitacao_id,tipo,nome,content_type,tamanho,criado_em")
+      .bind(licitacaoId, String(form.get("tipo") || "Outro"), file.name, key, file.type || "application/octet-stream", file.size).first();
+    return Response.json({ document: row }, { status: 201 });
   }
   const deleteMatch = url.pathname.match(/^\/api\/licitacoes\/(\d+)$/);
   if (request.method === "DELETE" && deleteMatch) {
@@ -167,7 +182,23 @@ const worker = {
       return new Response(null, { status: 302, headers: { Location: "/login" } });
     }
 
-    if (url.pathname === "/api/licitacoes" || url.pathname.match(/^\/api\/licitacoes\/\d+(?:\/items(?:\/\d+)?)?$/)) {
+    const documentRoute = url.pathname.match(/^\/api\/documentos\/(\d+)$/);
+    if (documentRoute && request.method === "GET") {
+      const document = await env.DB.prepare("SELECT nome,arquivo_key,content_type FROM licitacao_documentos WHERE id=?").bind(Number(documentRoute[1])).first<any>();
+      if (!document) return new Response("Documento não encontrado", { status: 404 });
+      const object = await env.DOCS.get(document.arquivo_key);
+      if (!object) return new Response("Arquivo não encontrado", { status: 404 });
+      const name = String(document.nome).replace(/["\r\n]/g, "");
+      return new Response(object.body, { headers: { "Content-Type": document.content_type || "application/octet-stream", "Content-Disposition": `inline; filename="${name}"`, "Cache-Control": "private, max-age=300" } });
+    }
+    if (documentRoute && request.method === "DELETE") {
+      const document = await env.DB.prepare("SELECT arquivo_key FROM licitacao_documentos WHERE id=?").bind(Number(documentRoute[1])).first<any>();
+      if (document) await env.DOCS.delete(document.arquivo_key);
+      await env.DB.prepare("DELETE FROM licitacao_documentos WHERE id=?").bind(Number(documentRoute[1])).run();
+      return Response.json({ ok: true });
+    }
+
+    if (url.pathname === "/api/licitacoes" || url.pathname.match(/^\/api\/licitacoes\/\d+(?:\/items(?:\/\d+)?|\/documentos)?$/)) {
       return licitacoesApi(request, env, url);
     }
 

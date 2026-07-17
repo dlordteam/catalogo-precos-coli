@@ -12,6 +12,12 @@
     "images":  {
                    "binding":  "IMAGES"
                },
+    "r2_buckets":  [
+                         {
+                             "binding":  "DOCS",
+                             "bucket_name":  "catalogo-precos-coli-documentos"
+                         }
+                     ],
     "d1_databases":  [
                          {
                              "database_name":  "catalogo-precos-coli-db",
