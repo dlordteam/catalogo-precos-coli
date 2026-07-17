@@ -74,6 +74,15 @@ async function licitacoesApi(request: Request, env: Env, url: URL) {
     const items = (await env.DB.prepare("SELECT i.*, p.descricao AS catalogo_nome, p.descricao_detalhada AS catalogo_descricao, p.imagem AS catalogo_imagem, p.categoria AS catalogo_categoria, p.status_revisao AS catalogo_status, p.fonte AS catalogo_fonte FROM licitacao_items i LEFT JOIN products p ON p.id = i.produto_id ORDER BY i.id").all()).results || [];
     return Response.json({ licitacoes: licitacoes.map((lic: any) => ({ ...lic, items: items.filter((item: any) => item.licitacao_id === lic.id) })) }, { headers: { "Cache-Control": "no-store" } });
   }
+  const deleteMatch = url.pathname.match(/^\/api\/licitacoes\/(\d+)$/);
+  if (request.method === "DELETE" && deleteMatch) {
+    const id = Number(deleteMatch[1]);
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM licitacao_items WHERE licitacao_id = ?").bind(id),
+      env.DB.prepare("DELETE FROM licitacoes WHERE id = ?").bind(id),
+    ]);
+    return Response.json({ ok: true });
+  }
   const body = await request.json<Record<string, any>>();
   const licitacaoMatch = url.pathname.match(/^\/api\/licitacoes\/(\d+)$/);
   if (request.method === "PATCH" && licitacaoMatch) {
