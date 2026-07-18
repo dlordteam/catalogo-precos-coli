@@ -71,6 +71,7 @@ async function handleLogin(request: Request, env: Env) {
 
 async function licitacoesApi(request: Request, env: Env, url: URL) {
   if (request.method === "GET") {
+    await env.DB.prepare("UPDATE licitacao_items SET valor_minimo = ROUND(custo_unitario * 1.60, 2) WHERE custo_unitario > 0 AND (valor_minimo IS NULL OR valor_minimo < ROUND(custo_unitario * 1.60, 2))").run();
     const licitacoes = (await env.DB.prepare("SELECT * FROM licitacoes ORDER BY id DESC").all()).results || [];
     const items = (await env.DB.prepare("SELECT i.*, p.descricao AS catalogo_nome, p.descricao_detalhada AS catalogo_descricao, p.imagem AS catalogo_imagem, p.categoria AS catalogo_categoria, p.status_revisao AS catalogo_status, p.fonte AS catalogo_fonte FROM licitacao_items i LEFT JOIN products p ON p.id = i.produto_id ORDER BY i.id").all()).results || [];
     const documentos = (await env.DB.prepare("SELECT id,licitacao_id,tipo,nome,content_type,tamanho,criado_em FROM licitacao_documentos ORDER BY id DESC").all()).results || [];
@@ -113,7 +114,10 @@ async function licitacoesApi(request: Request, env: Env, url: URL) {
   const itemMatch = url.pathname.match(/^\/api\/licitacoes\/(\d+)\/items$/);
   if (request.method === "POST" && itemMatch) {
     const custo = Number(body.custo_unitario) || 0;
-    const minimo = Number(body.valor_minimo) || custo * 1.6;
+    if (custo <= 0) return Response.json({ error: "O produto precisa ter preço de custo antes de ser vinculado à licitação." }, { status: 400 });
+    const minimoObrigatorio = Math.round(custo * 1.6 * 100) / 100;
+    const minimoInformado = Number(body.valor_minimo) || 0;
+    const minimo = Math.max(minimoInformado, minimoObrigatorio);
     const result = await env.DB.prepare("INSERT INTO licitacao_items (licitacao_id,item_numero,descricao_edital,quantidade,unidade,produto_id,produto_codigo,produto_nome,marca,modelo,fornecedor,link_compra,custo_unitario,valor_inicial,valor_minimo,valor_vendido,justificativa,status_compra) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id")
       .bind(Number(itemMatch[1]), body.item_numero, body.descricao_edital, Number(body.quantidade) || 1, body.unidade || "UN", Number(body.produto_id) || null, body.produto_codigo || "", body.produto_nome, body.marca || "", body.modelo || "", body.fornecedor || "", body.link_compra || "", custo, Number(body.valor_inicial) || 0, minimo, Number(body.valor_vendido) || 0, body.justificativa || "", body.status_compra || "Planejado").first();
     return Response.json(result, { status: 201 });
@@ -153,7 +157,7 @@ async function productsApi(request: Request, env: Env): Promise<Response> {
   }
 
   const where = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
-  const statement = env.DB.prepare(`SELECT id, fornecedor, codigo, descricao, categoria, unidade, pcs_caixa, preco_unitario, pagina, status_revisao, imagem, descricao_detalhada, caracteristicas, fonte, fonte_nome FROM products${where} ORDER BY id LIMIT ?`).bind(...values, limit);
+  const statement = env.DB.prepare(`SELECT id, fornecedor, codigo, descricao, categoria, unidade, pcs_caixa, preco_unitario, pagina, status_revisao, imagem, descricao_detalhada, caracteristicas, fonte, fonte_nome FROM products${where} ORDER BY CASE WHEN preco_unitario IS NULL OR preco_unitario <= 0 THEN 1 ELSE 0 END, preco_unitario ASC, id DESC LIMIT ?`).bind(...values, limit);
   const result = await statement.all<ProductRow>();
   const products = (result.results || []).map((row) => ({
     ...row,
