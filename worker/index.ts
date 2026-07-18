@@ -71,7 +71,10 @@ async function handleLogin(request: Request, env: Env) {
 
 async function licitacoesApi(request: Request, env: Env, url: URL) {
   if (request.method === "GET") {
-    await env.DB.prepare("UPDATE licitacao_items SET valor_minimo = ROUND(custo_unitario * 1.60, 2) WHERE custo_unitario > 0 AND (valor_minimo IS NULL OR valor_minimo < ROUND(custo_unitario * 1.60, 2))").run();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE licitacao_items SET valor_minimo = ROUND(custo_unitario * 1.60, 2) WHERE custo_unitario > 0 AND (valor_minimo IS NULL OR valor_minimo < ROUND(custo_unitario * 1.60, 2))"),
+      env.DB.prepare("UPDATE licitacao_items SET valor_vendido = valor_minimo WHERE custo_unitario > 0 AND (valor_vendido IS NULL OR valor_vendido < valor_minimo)"),
+    ]);
     const licitacoes = (await env.DB.prepare("SELECT * FROM licitacoes ORDER BY id DESC").all()).results || [];
     const items = (await env.DB.prepare("SELECT i.*, p.descricao AS catalogo_nome, p.descricao_detalhada AS catalogo_descricao, p.imagem AS catalogo_imagem, p.categoria AS catalogo_categoria, p.status_revisao AS catalogo_status, p.fonte AS catalogo_fonte FROM licitacao_items i LEFT JOIN products p ON p.id = i.produto_id ORDER BY i.id").all()).results || [];
     const documentos = (await env.DB.prepare("SELECT id,licitacao_id,tipo,nome,content_type,tamanho,criado_em FROM licitacao_documentos ORDER BY id DESC").all()).results || [];
@@ -119,13 +122,14 @@ async function licitacoesApi(request: Request, env: Env, url: URL) {
     const minimoInformado = Number(body.valor_minimo) || 0;
     const minimo = Math.max(minimoInformado, minimoObrigatorio);
     const result = await env.DB.prepare("INSERT INTO licitacao_items (licitacao_id,item_numero,descricao_edital,quantidade,unidade,produto_id,produto_codigo,produto_nome,marca,modelo,fornecedor,link_compra,custo_unitario,valor_inicial,valor_minimo,valor_vendido,justificativa,status_compra) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id")
-      .bind(Number(itemMatch[1]), body.item_numero, body.descricao_edital, Number(body.quantidade) || 1, body.unidade || "UN", Number(body.produto_id) || null, body.produto_codigo || "", body.produto_nome, body.marca || "", body.modelo || "", body.fornecedor || "", body.link_compra || "", custo, Number(body.valor_inicial) || 0, minimo, Number(body.valor_vendido) || 0, body.justificativa || "", body.status_compra || "Planejado").first();
+      .bind(Number(itemMatch[1]), body.item_numero, body.descricao_edital, Number(body.quantidade) || 1, body.unidade || "UN", Number(body.produto_id) || null, body.produto_codigo || "", body.produto_nome, body.marca || "", body.modelo || "", body.fornecedor || "", body.link_compra || "", custo, Number(body.valor_inicial) || 0, minimo, minimo, body.justificativa || "", body.status_compra || "Planejado").first();
     return Response.json(result, { status: 201 });
   }
   const updateItemMatch = url.pathname.match(/^\/api\/licitacoes\/(\d+)\/items\/(\d+)$/);
   if (request.method === "PATCH" && updateItemMatch) {
-    await env.DB.prepare("UPDATE licitacao_items SET status_compra=COALESCE(?,status_compra), valor_vendido=COALESCE(?,valor_vendido) WHERE id=? AND licitacao_id=?")
-      .bind(body.status_compra ?? null, body.valor_vendido == null ? null : Number(body.valor_vendido), Number(updateItemMatch[2]), Number(updateItemMatch[1])).run();
+    const sale = body.valor_vendido == null ? null : Number(body.valor_vendido);
+    await env.DB.prepare("UPDATE licitacao_items SET status_compra=COALESCE(?,status_compra), valor_vendido=CASE WHEN ? IS NULL THEN valor_vendido ELSE MAX(?,valor_minimo) END WHERE id=? AND licitacao_id=?")
+      .bind(body.status_compra ?? null, sale, sale, Number(updateItemMatch[2]), Number(updateItemMatch[1])).run();
     return Response.json({ ok: true });
   }
   return Response.json({ error: "Operação não encontrada" }, { status: 404 });
